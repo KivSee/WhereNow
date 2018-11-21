@@ -9,9 +9,8 @@ class playerComm:
         self.context = zmq.Context()
         self.socket = None
         self.logger = logger
-        self.prev_in_song = False
-        self.is_in_song = False
-        self.is_in_song_lock = threading.Lock()
+        self.prev_is_playing = False
+        self.is_playing = False
         self.guid = random.randint(0, 1000000)
         self.req_cookie = 1
 
@@ -70,19 +69,9 @@ class playerComm:
         return response.req_status
 
 
-    def _set_is_in_song(self):
-        new_value = self.get_busy()
-        self.is_in_song_lock.acquire()  # will block if lock is already held
-        self.prev_in_song = self.is_in_song
-        self.is_in_song = new_value
-        self.is_in_song_lock.release()
-
-    def get_is_in_song(self):
-        self.is_in_song_lock.acquire()  # will block if lock is already held
-        is_in_song_copy = self.is_in_song
-        self.is_in_song_lock.release()
-        return is_in_song_copy
-
+    def _set_is_playing(self):
+        self.prev_is_playing = self.is_playing
+        self.is_playing = self.get_busy()
 
         """
         #  Do 10 requests, waiting each time for a response

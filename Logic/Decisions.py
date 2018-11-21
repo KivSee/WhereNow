@@ -11,8 +11,8 @@ class DecisionEventType:
     NEW_MISSION_ACTION_FAIL = 4
     NEW_MISSION_ACTION_DONE = 5
     VALID_MISSION_NO_ACTION = 6
-    SONG_START = 7
-    SONG_END = 8
+    PLAY_START = 7
+    PLAY_END = 8
 
 class DecisionStateType:
     IDLE = 0
@@ -30,9 +30,12 @@ class Decisions(threading.Thread):
         self.decision_queue = decision_queue
         self.player_queue = player_queue
         self.logger = logger
-        self.start_flag = False
+        self.song_flag = False
+        self.prev_in_song = False
         self.is_in_song = False
-        self.state = DecisionStateType.GAME_TRANS
+        self.is_in_song_lock = threading.Lock()
+        self.state = DecisionStateType.SONG_PLAY
+        self.state_token = True
 
     def run(self):
         while True:
@@ -45,42 +48,70 @@ class Decisions(threading.Thread):
             self.logger.info("Win tag in song, will wait for song end to play win transition")
         elif msg == DecisionEventType.WIN_ACTION_DONE:
             self.state = DecisionStateType.WIN_TRANS
-            self.logger.info("Win tag in song, play win transition and song")
+            self.player_queue.put("STOP")
+            self.logger.info("Win tag identified out of song, immediately play win transition and then song")
         elif msg == DecisionEventType.WIN_ACTION_FAIL:
             self.state = DecisionStateType.ASK_FOR_CHIP_TRANS
-            self.logger.info("Win tag failed write, ask for chip again")
+            self.player_queue.put("STOP")
+            self.logger.info("Win tag failed write, immediately ask for chip again and retransition")
         elif msg == DecisionEventType.NEW_MISSION_NO_ACTION:
-            self.state = DecisionStateType.GAME_TRANS
-            self.logger.info("Tag with no mission identified, game rules will play at song end")
+            self.state = DecisionStateType.ASK_FOR_CHIP_TRANS
+            self.logger.info("Tag with no mission identified during song, ask for the chip again, if no chip is passed after ask, play game rules")
         elif msg == DecisionEventType.NEW_MISSION_ACTION_DONE:
             self.state = DecisionStateType.MISSION_TRANS
-            self.logger.info("Tag encoded with mission, go find friends to complete it")
+            self.player_queue.put("STOP")
+            self.logger.info("Tag encoded with mission, stop and play call to action transition")
         elif msg == DecisionEventType.NEW_MISSION_ACTION_FAIL:
             self.state = DecisionStateType.ASK_FOR_CHIP_TRANS
-            self.logger.info("Mission encoding failed, ask for chip again")
+            self.player_queue.put("STOP")
+            self.logger.info("Mission encoding failed, immediately ask for chip again and retransition")
         elif msg == DecisionEventType.VALID_MISSION_NO_ACTION:
             self.state = DecisionStateType.MISSION_TRANS
             self.logger.info("Valid mission already encoded, go find friends to complete it")
-        elif msg == DecisionEventType.SONG_START:
-            if (self.start_flag):
-                self.is_in_song = True
+        elif msg == DecisionEventType.PLAY_START:
+            if self.song_flag:
+                self._set_is_in_song(True)
             self.logger.info("Play started, is_in_song is now: " + str(self.is_in_song))
-        elif msg == DecisionEventType.SONG_END:
+        elif msg == DecisionEventType.PLAY_END:
             self.is_in_song = False
+            self.state_token = True
             self.logger.info("Play ended")
 
-        if not self.is_in_song and not self.start_flag:
-           if self.state == DecisionStateType.SONG_PLAY:
+        # Execute state
+        if self.state_token:
+            self.state_token = False
+            self.song_flag = False
+            if self.state == DecisionStateType.SONG_PLAY:
                 self.player_queue.put("sun.wav") # just an example we need to choose a random song?
-                self.start_flag = True
+                self.song_flag = True
                 self.state = DecisionStateType.TRANS_PLAY
-           elif self.state == DecisionStateType.TRANS_PLAY:
+            elif self.state == DecisionStateType.TRANS_PLAY:
                 self.player_queue.put("kivshi.wav") # just an example we need to choose a random transition?
                 self.state = DecisionStateType.SONG_PLAY
-           elif self.state == DecisionStateType.GAME_TRANS:
-                self.player_queue.put("1.wav") # need to record the game rules wav!
+            elif self.state == DecisionStateType.GAME_TRANS:
+                self.player_queue.put("kivshi.wav") # need to record the game rules wav!
+                self.state = DecisionStateType.SONG_PLAY
+            elif self.state == DecisionStateType.ASK_FOR_CHIP_TRANS:
+                self.player_queue.put("kivshi.wav")  # need to record ask for chip wav!
+                self.state = DecisionStateType.TRANS_PLAY
+            elif self.state == DecisionStateType.WIN_TRANS:
+                self.player_queue.put("kivshi.wav")  # need to record win transition wav!
+                self.state = DecisionStateType.SONG_PLAY    # WIN_SONG_PLAY?
+            elif self.state == DecisionStateType.MISSION_TRANS:
+                self.player_queue.put("kivshi.wav")  # need to record mission call to action transition wav!
                 self.state = DecisionStateType.SONG_PLAY
 
+    def _set_is_in_song(self, new_value):
+        self.is_in_song_lock.acquire()  # will block if lock is already held
+        self.prev_in_song = self.is_in_song
+        self.is_in_song = new_value
+        self.is_in_song_lock.release()
+
+    def get_is_in_song(self):
+        self.is_in_song_lock.acquire()  # will block if lock is already held
+        is_in_song_copy = self.is_in_song
+        self.is_in_song_lock.release()
+        return is_in_song_copy
 
 
 # import datetime

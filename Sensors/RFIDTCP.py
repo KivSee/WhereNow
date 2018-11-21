@@ -4,7 +4,7 @@ import threading
 import random
 import socket
 import array
-from Sensors.Decisions import DecisionEventType
+from Logic.Decisions import DecisionEventType
 
 class RFIDTCP(threading.Thread):
 
@@ -31,10 +31,10 @@ class RFIDTCP(threading.Thread):
 
     EFFECT_TIMEOUT_SEC  = 10
 
-    def __init__(self, player, decision_queue, logger):
+    def __init__(self, decisions, decision_queue, logger):
         threading.Thread.__init__(self, name="RFIDTCP")
         self.sock = self.create_tcp_listen_sock('', 5007) # no server IP means we are on all available ip interfaces
-        self.player = player
+        self.decisions = decisions
         self.decision_queue = decision_queue
         self.logger = logger
         self.mytime = datetime.datetime.now()
@@ -61,10 +61,6 @@ class RFIDTCP(threading.Thread):
             self.conn.settimeout(3.0)
             try:
                 while True:
-                    self.mytime = datetime.datetime.now()
-                    if (self.mytime - self.timer_on_time > datetime.timedelta(seconds=EFFECT_TIMEOUT_SEC) && self.timer_on_flag):
-                        self.send_leds_state(False)
-                        self.timer_on_flag = False
                     curr_buf = self.conn.recv(self.MSG_LENGTH - len(self.accum_msg))
                     if len(curr_buf) == 0:
                         self.logger.info("socket closed. other side closed the socket gracefully. will listen again")
@@ -74,6 +70,22 @@ class RFIDTCP(threading.Thread):
                     if len(self.accum_msg) == self.MSG_LENGTH:
                         self.handle_msg(self.accum_msg)
                         self.accum_msg = ""
+
+                    self.mytime = datetime.datetime.now()
+                    if (self.mytime - self.timer_on_time > datetime.timedelta(
+                            seconds=self.EFFECT_TIMEOUT_SEC) and self.timer_on_flag):
+                        self.send_leds_state(False)
+                        self.timer_on_flag = False
+
+                    curr_in_song = self.decisions.get_is_in_song()
+                    if (curr_in_song and not self.prev_in_song):
+                        self.send_leds_state(False)
+                        self.timer_on_flag = False
+                    elif (not curr_in_song and self.prev_in_song):
+                        self.send_leds_state(True)
+                        self.timer_on_flag = False
+                    self.prev_in_song = curr_in_song
+
             except:
                 self.logger.info("RFID socket timed out. will disconnect socket and listen again")
                 self.conn.close()
@@ -111,30 +123,36 @@ class RFIDTCP(threading.Thread):
             self.logger.warning("Undefined message type" + byte_arr[0])
 
     def handle_tag(self, byte_arr):
-        is_in_song = self.player.get_is_in_song()
+        is_in_song = self.decisions.get_is_in_song()
         self.mission = byte_arr[5]
         if byte_arr[5] >= self.WIN_STATE and is_in_song:
             self.logger.info("Winning tag identified when in song, mission: " + self.mission)
             self.decision_queue.put(DecisionEventType.WIN_NO_ACTION)
             self.send_rfid_response(self.WIN_NO_ERASE, 0)
+            self.timer_on_flag = True
+            self.timer_on_time = self.mytime
         elif byte_arr[5] < self.VALID_STATE and is_in_song:
             self.logger.info("Tag with no mission identified when in song, mission: " + self.mission)
             self.decision_queue.put(DecisionEventType.NEW_MISSION_NO_ACTION)
             self.send_rfid_response(self.NO_COMMAND, 0)
-        if byte_arr[5] >= self.WIN_STATE and not is_in_song:
-            self.logger.info("Winning tag identified when not in song, waiting for write before queue")
+        elif byte_arr[5] >= self.WIN_STATE and not is_in_song:
+            self.logger.info("Winning tag identified when not in song, waiting for write before queuing to decision module")
             # dont queue the mission for decisions yet, only after the erase
             self.new_mission = 0
             self.send_rfid_response(self.WIN_AND_ERASE, self.new_mission)
+            # we dont set the timer flag because we want the win pattern to keep on until a song is played
         elif byte_arr[5] < self.VALID_STATE and not is_in_song:
-            self.logger.warning("Tag with no mission identified when not in song, waiting for write before queue")
+            self.logger.warning("Tag with no mission identified when not in song, waiting for write before queuing to decision module")
             # dont queue the mission for decisions yet, only after the write
             self.new_mission = self.VALID_STATE | random.randint(0, 63)
             self.send_rfid_response(self.NEW_MISSION, self.new_mission)
+            # we dont set the timer flag because we want the mission to keep on until a song is played
         else:
-            self.logger.warning("Tag with no mission identified when not in song, waiting for write to queue mission")
+            self.logger.warning("Tag with valid mission identified, no write to tag needed, display mission")
             self.decision_queue.put(DecisionEventType.VALID_MISSION_NO_ACTION)
             self.send_rfid_response(self.DISPLAY_MISSION, self.mission)
+            self.timer_on_flag = True
+            self.timer_on_time = self.mytime
 
     def send_rfid_response(self, command, mission):
         msg = [self.TAG_RESPONSE_MSG, command, mission,0,0,0,0,0]
