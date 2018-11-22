@@ -1,3 +1,4 @@
+import os
 import datetime
 import Logic.Decisions
 import Player.playerComm
@@ -12,8 +13,9 @@ logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelnam
 rootLogger = logging.getLogger()
 chipIdLogger = logging.getLogger()
 
-fileHandler = logging.FileHandler("{0}/{1}.log".format(r"c:\logs", 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
-chipIdFileHandler = logging.FileHandler("{0}/{1}.log".format(r"c:\logs", 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
+logdir = os.path.join(os.curdir, "logs")
+fileHandler = logging.FileHandler("{0}/{1}.log".format(logdir, 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
+chipIdFileHandler = logging.FileHandler("{0}/{1}.log".format(logdir, 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
 fileHandler.setFormatter(logFormatter)
 chipIdFileHandler.setFormatter(logFormatter)
 rootLogger.addHandler(fileHandler)
