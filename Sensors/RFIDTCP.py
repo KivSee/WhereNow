@@ -1,4 +1,3 @@
-
 import datetime
 import threading
 import random
@@ -31,12 +30,13 @@ class RFIDTCP(threading.Thread):
 
     EFFECT_TIMEOUT_SEC  = 10
 
-    def __init__(self, decisions, decision_queue, logger):
+    def __init__(self, decisions, decision_queue, logger, chip_id_logger):
         threading.Thread.__init__(self, name="RFIDTCP")
         self.sock = self.create_tcp_listen_sock('', 5007) # no server IP means we are on all available ip interfaces
         self.decisions = decisions
         self.decision_queue = decision_queue
         self.logger = logger
+        self.chip_id_logger = chip_id_logger
         self.mytime = datetime.datetime.now()
         self.timer_on_time = datetime.datetime.now()
         self.timer_on_flag = False
@@ -78,10 +78,10 @@ class RFIDTCP(threading.Thread):
                         self.timer_on_flag = False
 
                     curr_in_song = self.decisions.get_is_in_song()
-                    if (curr_in_song and not self.prev_in_song):
+                    if curr_in_song and not self.prev_in_song:
                         self.send_leds_state(False)
                         self.timer_on_flag = False
-                    elif (not curr_in_song and self.prev_in_song):
+                    elif not curr_in_song and self.prev_in_song:
                         self.send_leds_state(True)
                         self.timer_on_flag = False
                     self.prev_in_song = curr_in_song
@@ -102,37 +102,38 @@ class RFIDTCP(threading.Thread):
             print "WRITE_STATUS_MSG"
             # print byte_arr
             self.logger.info("WRITE_STATUS_MSG " + str([elem.encode("hex") for elem in msg]))
-            if (self.write_status == self.WRITE_FAILED):
+            if self.write_status == self.WRITE_FAILED:
                 self.logger.info("Write to tag failed!")
-                if (self.new_mission):
-                    self.decision_queue.put(DecisionEventType.WIN_ACTION_FAIL)
-                else:
+                if self.new_mission:
                     self.decision_queue.put(DecisionEventType.NEW_MISSION_ACTION_FAIL)
-            elif (self.write_status == self.WRITE_SUCCESS):
-                if (self.new_mission):
-                    self.decision_queue.put(DecisionEventType.WIN_ACTION_DONE)
+                else:
+                    self.decision_queue.put(DecisionEventType.WIN_ACTION_FAIL)
+            elif self.write_status == self.WRITE_SUCCESS:
+                self.logger.info("Write to tag successful")
+                if self.new_mission:
+                    self.decision_queue.put(DecisionEventType.NEW_MISSION_ACTION_DONE)
                     self.mission = self.new_mission
                 else:
-                    self.decision_queue.put(DecisionEventType.NEW_MISSION_ACTION_DONE)
-                self.logger.info("Write to tag successful, mission: " + self.mission)
+                    self.decision_queue.put(DecisionEventType.WIN_ACTION_DONE)
+                self.logger.info("Written mission: 0x" + format(self.mission, '02x'))
             else:
-                self.logger.warning("Undefined write status content!" + self.write_status)
+                self.logger.warning("Undefined write status content!" + str(self.write_status))
         elif byte_arr[0] == self.HEARTBEAT_MSG:
             self.conn.send(byte_arr)
         else:
-            self.logger.warning("Undefined message type" + byte_arr[0])
+            self.logger.warning("Undefined message type" + str(byte_arr[0]))
 
     def handle_tag(self, byte_arr):
         is_in_song = self.decisions.get_is_in_song()
         self.mission = byte_arr[5]
         if byte_arr[5] >= self.WIN_STATE and is_in_song:
-            self.logger.info("Winning tag identified when in song, mission: " + self.mission)
+            self.logger.info("Winning tag identified when in song, mission: " + format(self.mission, '02x'))
             self.decision_queue.put(DecisionEventType.WIN_NO_ACTION)
             self.send_rfid_response(self.WIN_NO_ERASE, 0)
             self.timer_on_flag = True
             self.timer_on_time = self.mytime
         elif byte_arr[5] < self.VALID_STATE and is_in_song:
-            self.logger.info("Tag with no mission identified when in song, mission: " + self.mission)
+            self.logger.info("Tag with no mission identified when in song, mission: " + format(self.mission, '02x'))
             self.decision_queue.put(DecisionEventType.NEW_MISSION_NO_ACTION)
             self.send_rfid_response(self.NO_COMMAND, 0)
         elif byte_arr[5] >= self.WIN_STATE and not is_in_song:
@@ -142,13 +143,13 @@ class RFIDTCP(threading.Thread):
             self.send_rfid_response(self.WIN_AND_ERASE, self.new_mission)
             # we dont set the timer flag because we want the win pattern to keep on until a song is played
         elif byte_arr[5] < self.VALID_STATE and not is_in_song:
-            self.logger.warning("Tag with no mission identified when not in song, waiting for write before queuing to decision module")
+            self.logger.info("Tag with no mission identified when not in song, waiting for write before queuing to decision module")
             # dont queue the mission for decisions yet, only after the write
             self.new_mission = self.VALID_STATE | random.randint(0, 63)
             self.send_rfid_response(self.NEW_MISSION, self.new_mission)
             # we dont set the timer flag because we want the mission to keep on until a song is played
         else:
-            self.logger.warning("Tag with valid mission identified, no write to tag needed, display mission")
+            self.logger.info("Tag with valid mission identified, no write to tag needed, display mission")
             self.decision_queue.put(DecisionEventType.VALID_MISSION_NO_ACTION)
             self.send_rfid_response(self.DISPLAY_MISSION, self.mission)
             self.timer_on_flag = True
@@ -165,38 +166,10 @@ class RFIDTCP(threading.Thread):
         print "SHOW_LEDS_MSG"
         if show_leds:
             msg = [self.SHOW_LEDS_MSG, 1, 0,0,0,0,0,0]
-            print msg
+            # print msg
             out_msg = bytearray(msg)  # type: bytearray
         else:
             msg = [self.SHOW_LEDS_MSG, 0, 0,0,0,0,0,0]
-            print msg
+            # print msg
             out_msg = bytearray(msg)  # type: bytearray
         self.conn.send(out_msg)
-
-
-'''     
-    def process(self):
-        # curr_time = datetime.datetime.now()
-
-        self.data = self.get_data()
-        # if tagData is None:
-            # self.data = None
-        # elif self.data is None:
-            # self.data = 0
-        # consider having the 3 seconds redundant consequtive check here
-        if dataRead is not None:
-            if self.last_sucessful_read_time is None:
-                print 'starting to receive data from sensor. curr value: ' + str(dataRead)
-            self.last_sucessful_read_time = datetime.datetime.now()
-            return dataRead
-
-        elif self.last_sucessful_read_time and datetime.datetime.now() - self.last_sucessful_read_time > datetime.timedelta(seconds=10):
-            print 'did not receive data from sensor for more than 10 seconds!'
-            self.last_sucessful_read_time = None
-
-        if self.last_sucessful_read_time is None:
-            return None
-        else:
-            return 0.0
-
-'''

@@ -10,10 +10,14 @@ from time import sleep
 logging.basicConfig(level=logging.INFO)
 logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 rootLogger = logging.getLogger()
+chipIdLogger = logging.getLogger()
 
 fileHandler = logging.FileHandler("{0}/{1}.log".format(r"c:\logs", 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
+chipIdFileHandler = logging.FileHandler("{0}/{1}.log".format(r"c:\logs", 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
 fileHandler.setFormatter(logFormatter)
+chipIdFileHandler.setFormatter(logFormatter)
 rootLogger.addHandler(fileHandler)
+chipIdLogger.addHandler(chipIdFileHandler)
 
 # consoleHandler = logging.StreamHandler()
 # consoleHandler.setFormatter(logFormatter)
@@ -26,15 +30,16 @@ player_queue = Queue.Queue()
 
 player = Player.playerComm.playerComm(rootLogger)
 decisionsThread = Logic.Decisions.Decisions(player_queue, decision_queue, rootLogger)
-rfidThread = Sensors.RFIDTCP.RFIDTCP(decisionsThread, decision_queue, rootLogger)
-
-
 decisionsThread.start()
+
+rfidThread = Sensors.RFIDTCP.RFIDTCP(decisionsThread, decision_queue, rootLogger, chipIdLogger)
 rfidThread.start()
+
 rootLogger.info("Threads started")
 
 # open comm port to player
-player_socket = player.connect("10.0.0.102","2200")
+player_socket = player.connect("10.0.0.102","2100") #raspberry
+# player_socket = player.connect("10.0.0.37","2100") #amir laptop
 
 #initialize time vars
 MyTime = datetime.datetime.now()
@@ -48,12 +53,10 @@ while True:
     MyTime = datetime.datetime.now()
     sleep(0.5)
     if (MyTime - prevTime > datetime.timedelta(seconds=1)):
-        # print "XXXXXXXXX"
         player._set_is_playing()
-        # print "YYYYYYYYY"
-        if player.prev_is_playing == False and player.is_playing == True:
+        if player.is_playing and not player.prev_is_playing:
             decision_queue.put(Logic.Decisions.DecisionEventType.PLAY_START)
-        if player.prev_is_playing == True and player.is_playing == False:
+        if player.prev_is_playing and not player.is_playing:
             decision_queue.put(Logic.Decisions.DecisionEventType.PLAY_END)
         prevTime = MyTime
     try:
@@ -66,8 +69,5 @@ while True:
         # print "no new orders"
         pass
 
-
-    # TODO: handle timeout on leds in rfid thread - done, needs testing
-    # TODO: decide on the transitions and select between them, send to player
-    # TODO: decide how to choose between the songs and send song to player
+    # TODO: log all the chip IDs to csv
 

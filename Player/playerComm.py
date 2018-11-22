@@ -1,6 +1,5 @@
 import zmq
 import player_command_pb2
-import threading
 import random
 
 class playerComm:
@@ -72,14 +71,3 @@ class playerComm:
     def _set_is_playing(self):
         self.prev_is_playing = self.is_playing
         self.is_playing = self.get_busy()
-
-        """
-        #  Do 10 requests, waiting each time for a response
-        for request in range(10):
-            print("Sending request %s" % request)
-            socket.send(b"Hello")
-
-            #  Get the reply.
-            message = socket.recv()
-            print("Received reply %s [ %s ]" % (request, message))
-        """
