@@ -96,6 +96,7 @@ class RFIDTCP(threading.Thread):
             print "TAG_INFO_MSG"
             print byte_arr
             self.logger.info("TAG_INFO_MSG " + str([elem.encode("hex") for elem in msg]))
+            self.chip_id_logger.info(str([ elem.encode("hex") for elem in msg ]))
             self.handle_tag(byte_arr)
         elif byte_arr[0] == self.WRITE_STATUS_MSG:
             self.write_status = byte_arr[1]

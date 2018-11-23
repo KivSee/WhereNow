@@ -9,16 +9,17 @@ import logging
 from time import sleep
 
 logging.basicConfig(level=logging.INFO)
-logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-rootLogger = logging.getLogger()
-chipIdLogger = logging.getLogger()
+logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s] %(message)s")
+rootLogger = logging.getLogger("root logger")
+chipLogFormatter = logging.Formatter("%(asctime)s,[%(threadName)-12.12s],[%(levelname)-5.5s],%(message)s")
+chipIdLogger = logging.getLogger("Chip ID logger")
 
 logdir = os.path.join(os.curdir, "logs")
 fileHandler = logging.FileHandler("{0}/{1}.log".format(logdir, 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
-chipIdFileHandler = logging.FileHandler("{0}/{1}.log".format(logdir, 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
 fileHandler.setFormatter(logFormatter)
-chipIdFileHandler.setFormatter(logFormatter)
 rootLogger.addHandler(fileHandler)
+chipIdFileHandler = logging.FileHandler("{0}/{1}.csv".format(logdir, 'where-now-{:%Y-%m-%d--%H-%M-%S}'.format(datetime.datetime.now())))
+chipIdFileHandler.setFormatter(chipLogFormatter)
 chipIdLogger.addHandler(chipIdFileHandler)
 
 # consoleHandler = logging.StreamHandler()

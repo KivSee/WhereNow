@@ -1,3 +1,6 @@
+# user ignores
+*.csv
+
 # pycharm project files
 .idea/
 
