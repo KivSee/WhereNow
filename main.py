@@ -72,5 +72,5 @@ while True:
         # print "no new orders"
         pass
 
-    # TODO: log all the chip IDs to csv
+
 
